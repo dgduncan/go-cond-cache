@@ -16,7 +16,9 @@ import (
 )
 
 var (
-	ExpiredDuration = 10 * time.Second
+	ExpiredDuration = 24 * time.Hour
+
+	ExpiredTaskTimer = 10 * time.Minute
 )
 
 var (
@@ -53,7 +55,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	row := stmt.QueryRowContext(ctx, k)
 	if err := row.Err(); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, gocondcache.ErrNotFound
 		}
 		return nil, err
 	}
