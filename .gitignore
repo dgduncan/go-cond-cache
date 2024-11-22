@@ -15,12 +15,12 @@
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+cmd/
+vendor/
 
 # Go workspace file
 go.work
 go.work.sum
-vendor
 
 # env file
 .env
