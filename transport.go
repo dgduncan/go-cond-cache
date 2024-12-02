@@ -3,7 +3,6 @@ package gocondcache
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -11,7 +10,7 @@ import (
 	"time"
 )
 
-type conditionalHeader string
+// type conditionalHeader string
 
 const (
 	cacheControlMaxAge = "max-age"
@@ -22,9 +21,9 @@ const (
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"
-	headerIfMofifiedSince   = "If-Modified-Since"
-	headerIfUnmodifiedSince = "If-Unmodified-Since"
+	// headerLastModified      = "Last-Modified"
+	// headerIfMofifiedSince   = "If-Modified-Since"
+	// headerIfUnmodifiedSince = "If-Unmodified-Since"
 )
 
 type CacheTransport struct {
@@ -84,24 +83,24 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, transportError
 }
 
-func containsConditionalHeader(r *http.Request) bool {
-	headers := r.Header
+// func containsConditionalHeader(r *http.Request) bool {
+// 	headers := r.Header
 
-	for k, v := range headers {
-		fmt.Println(k, v)
-	}
+// 	for k, v := range headers {
+// 		fmt.Println(k, v)
+// 	}
 
-	return false
-}
+// 	return false
+// }
 
-func getConditionHeader(r *http.Request) string {
-	etag := r.Header.Get(headerIfNoneMatch)
-	if etag != "" {
-		return etag
-	}
+// func getConditionHeader(r *http.Request) string {
+// 	etag := r.Header.Get(headerIfNoneMatch)
+// 	if etag != "" {
+// 		return etag
+// 	}
 
-	return r.Header.Get(headerIfMatch)
-}
+// 	return r.Header.Get(headerIfMatch)
+// }
 
 func getMaxAge(r *http.Response) time.Duration {
 	// Get the Cache-Control header value

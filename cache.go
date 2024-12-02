@@ -13,7 +13,7 @@ var (
 type CacheItem struct {
 	ETAG       string
 	Response   []byte
-	Expiration time.Time // NOTE : look to see if expiration needs to be set from cache-control headers
+	Expiration time.Time // NOTE : look to see if expiration needs to be set from cache-control headers. This represents
 }
 
 type Cache interface {

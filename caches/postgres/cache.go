@@ -13,12 +13,7 @@ import (
 	_ "github.com/lib/pq"
 
 	gocondcache "github.com/dgduncan/go-cond-cache"
-)
-
-var (
-	ExpiredDuration = 24 * time.Hour
-
-	ExpiredTaskTimer = 10 * time.Minute
+	"github.com/dgduncan/go-cond-cache/caches"
 )
 
 var (
@@ -37,7 +32,10 @@ var (
 )
 
 type Config struct {
-	DeleteExpiredItems bool
+	DeleteExpiredItems bool          // Controls if background task runs to delete expired items from the database
+	ExpiredTaskTimer   time.Duration // How often the background rask runs to delete expired items. Shorter durations can cause unecessary DB overhead
+
+	ItemExpiration time.Duration // How long a items stays valid in the database. This is independent of the expiration retrieved from the conditional response.
 }
 
 type Cache struct {
@@ -52,7 +50,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 		return nil, err
 	}
 
-	row := stmt.QueryRowContext(ctx, k)
+	row := stmt.QueryRowContext(ctx, k, p.now().UTC())
 	if err := row.Err(); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, gocondcache.ErrNotFound
@@ -89,7 +87,7 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 		return err
 	}
 
-	_, err = stmt.ExecContext(ctx, k, buff.Bytes(), p.now().UTC().Add(ExpiredDuration))
+	_, err = stmt.ExecContext(ctx, k, buff.Bytes(), p.now().UTC().Add(caches.DefaultExpiredDuration))
 	return err
 }
 

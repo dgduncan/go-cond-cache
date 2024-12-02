@@ -1,5 +1,44 @@
 package dynamodb
 
+import (
+	"bytes"
+	"context"
+	"encoding/gob"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	gocondcache "github.com/dgduncan/go-cond-cache"
+	"github.com/dgduncan/go-cond-cache/caches"
+)
+
+type Config struct {
+	DeleteExpiredItems bool // Controls if a the expired_at TTL property is put in the database to allow automatic deletion of expired items
+
+	ItemExpiration time.Duration // How long a items stays valid in the database. This is independent of the expiration retrieved from the conditional response.
+	Region         string
+	Table          string
+}
+
+type Cache struct {
+	client *dynamodb.Client
+
+	table      string
+	expiration time.Duration
+	now        func() time.Time
+}
+
+type cacheItem struct {
+	URL       string `json:"url"`
+	Response  []byte `json:"response"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+	ExpiredAt int64  `json:"expired_at"`
+}
+
 // type Config struct {
 // 	Endpoint               string
 // 	Region                 string
@@ -14,80 +53,114 @@ package dynamodb
 // }
 
 // GetHTTPResponse retrieves an http.Response from Redis for given key
-// func (c *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
-// 	key, err := attributevalue.Marshal(k)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
+	key, err := attributevalue.Marshal(k)
+	if err != nil {
+		return nil, err
+	}
 
-// 	output, err := c.db.GetItem(ctx, &db.GetItemInput{
-// 		TableName: aws.String(c.table),
-// 		Key: map[string]types.AttributeValue{
-// 			"url": key,
-// 		},
-// 		ConsistentRead: aws.Bool(true),
-// 	})
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	output, err := p.client.GetItem(ctx, &dynamodb.GetItemInput{
+		Key: map[string]types.AttributeValue{
+			"URL": key,
+		},
+		ConsistentRead: aws.Bool(true),
+		TableName:      aws.String(p.table),
+	})
+	if err != nil {
+		return nil, err
+	}
 
-// 	if output.Item == nil {
-// 		return nil, errors.New("item not found")
-// 	}
+	var item cacheItem
+	if err := attributevalue.UnmarshalMap(output.Item, &item); err != nil {
+		return nil, err
+	}
 
-// 	cacheItem := new(gocondcache.CacheItem)
-// 	if err = attributevalue.UnmarshalMap(output.Item, cacheItem); err != nil {
-// 		return nil, err
-// 	}
+	if p.now().UTC().Unix() >= item.ExpiredAt {
+		return nil, nil
+	}
 
-// 	if cacheItem.TTL < time.Now().Unix() {
-// 		return nil, errors.New("item has expired ttl")
-// 	}
+	buff := bytes.NewBuffer(item.Response)
+	dec := gob.NewDecoder(buff)
 
-// 	r := bufio.NewReader(bytes.NewReader(cacheItem.Response))
+	var ci gocondcache.CacheItem
+	if err := dec.Decode(&ci); err != nil {
+		return nil, err
+	}
 
-// 	res, err := http.ReadResponse(r, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	return &ci, nil
+}
 
-// 	return res, nil
-// }
+// StoreHTTPResponse stores an http.Response in Redis
+func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
+	createdAt := c.now().UTC()
 
-// // StoreHTTPResponse stores an http.Response in Redis
-// func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
-// 	if ttl <= 0 {
-// 		return nil
-// 	}
+	var buff bytes.Buffer
+	enc := gob.NewEncoder(&buff)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
 
-// 	resBytes, err := httputil.DumpResponse(res, true)
-// 	if err != nil {
-// 		return err
-// 	}
+	i := cacheItem{
+		URL:       k,
+		Response:  buff.Bytes(),
+		CreatedAt: createdAt.Unix(),
+		ExpiredAt: createdAt.Add(c.expiration).Unix(),
+	}
 
-// 	input := dynamodb.PutItemInput{
-// 		TableName: aws.String(c.table),
-// 		Item: map[string]*dynamodb.AttributeValue{
-// 			PrimaryKey: {
-// 				S: aws.String(key),
-// 			},
-// 			"response": {
-// 				B: resBytes,
-// 			},
-// 			"ttl": {
-// 				N: aws.String(strconv.Itoa(int(time.Now().Add(ttl).Unix()))),
-// 			},
-// 		},
-// 	}
-// 	_, err = c.client.PutItemWithContext(ctx, &input)
-// return nil, nil
-// }
+	av, err := attributevalue.MarshalMap(i)
+	if err != nil {
+		return err
+	}
 
-// func New(ctx context.Context) (*Cache, error) {
-// 	// client := db.NewFromConfig(aws.Config{})
+	input := dynamodb.PutItemInput{
+		TableName: aws.String(c.table),
+		Item:      av,
+	}
 
-// 	return &Cache{
-// 		// db: client,
-// 	}, nil
+	_, err = c.client.PutItem(ctx, &input)
+	return err
+}
 
-// }
+func NewDynamoDBCache(ctx context.Context, c *Config) (*Cache, error) {
+	var itemExpiration time.Duration
+	if c.ItemExpiration == 0 {
+		itemExpiration = caches.DefaultExpiredDuration
+	}
+	awsConfig, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(c.Region))
+	if err != nil {
+		return nil, err
+	}
+
+	client := dynamodb.NewFromConfig(awsConfig)
+
+	// if _, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
+	// 	TableName: aws.String("test"),
+	// 	AttributeDefinitions: []types.AttributeDefinition{
+	// 		types.AttributeDefinition{
+	// 			AttributeName: aws.String("URL"),
+	// 			AttributeType: types.ScalarAttributeTypeS,
+	// 		},
+	// 	},
+	// 	KeySchema: []types.KeySchemaElement{
+	// 		types.KeySchemaElement{
+	// 			AttributeName: aws.String("URL"),
+	// 			KeyType:       types.KeyTypeHash,
+	// 		},
+	// 	},
+	// 	ProvisionedThroughput: &types.ProvisionedThroughput{
+	// 		ReadCapacityUnits:  aws.Int64(5),
+	// 		WriteCapacityUnits: aws.Int64(5),
+	// 	},
+	// }); err != nil {
+	// 	panic(err)
+	// }
+
+	return &Cache{
+		client: client,
+
+		table:      c.Table,
+		expiration: itemExpiration,
+		now:        time.Now,
+	}, nil
+}
