@@ -30,6 +30,7 @@ type CacheTransport struct {
 	Wrapped http.RoundTripper
 
 	cache Cache
+	now   func() time.Time
 }
 
 func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -39,7 +40,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	item, err := c.cache.Get(ctx, r.URL.String())
 	if err == nil {
 		// cached item is still valid
-		if time.Now().UTC().Before(item.Expiration) {
+		if c.now().UTC().Before(item.Expiration) {
 			nr := bufio.NewReader(bytes.NewReader(item.Response))
 			return http.ReadResponse(nr, nil)
 		}
@@ -56,7 +57,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 
 		maxAge := getMaxAge(resp)
-		item.Expiration = time.Now().Add(maxAge)
+		item.Expiration = c.now().UTC().Add(maxAge)
 
 		if err := c.cache.Set(ctx, r.URL.String(), item); err != nil {
 			return resp, transportError
@@ -75,7 +76,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err := c.cache.Set(ctx, r.URL.String(), &CacheItem{
 		ETAG:       resp.Header.Get(headerETAG),
 		Response:   resBytes,
-		Expiration: time.Now().Add(maxAge),
+		Expiration: c.now().UTC().Add(maxAge),
 	}); err != nil {
 		slog.Debug("error caching response", "error", err)
 	}
