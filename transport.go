@@ -3,6 +3,7 @@ package gocondcache
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -45,28 +46,26 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			return http.ReadResponse(nr, nil)
 		}
 
+		// item has been found in the cache but is expired
 		// check if item is still valid by adding etag to conditional requesst
 		r.Header.Add(headerIfNoneMatch, item.ETAG)
 	}
 
 	resp, transportError := c.Wrapped.RoundTrip(r)
 	if resp.StatusCode == http.StatusNotModified {
-		item, err := c.cache.Get(ctx, r.URL.String())
-		if err != nil {
-			return resp, transportError
-		}
-
+		// cache item as been revalidated as the response is 304
 		maxAge := getMaxAge(resp)
-		item.Expiration = c.now().UTC().Add(maxAge)
+		item.Expiration = c.now().UTC().Add(maxAge) // keep same cached response but update expiration
 
 		if err := c.cache.Set(ctx, r.URL.String(), item); err != nil {
-			return resp, transportError
+			return resp, errors.Join(err, transportError) // return original http response and error
 		}
 
 		nr := bufio.NewReader(bytes.NewReader(item.Response))
 		return http.ReadResponse(nr, nil)
 	}
 
+	// check if response contains conditional request header i.e etag
 	if getETAGHeader(resp) == "" { // if no etag header is found, we don't cache the response
 		return resp, transportError
 	}
@@ -83,25 +82,6 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	return resp, transportError
 }
-
-// func containsConditionalHeader(r *http.Request) bool {
-// 	headers := r.Header
-
-// 	for k, v := range headers {
-// 		fmt.Println(k, v)
-// 	}
-
-// 	return false
-// }
-
-// func getConditionHeader(r *http.Request) string {
-// 	etag := r.Header.Get(headerIfNoneMatch)
-// 	if etag != "" {
-// 		return etag
-// 	}
-
-// 	return r.Header.Get(headerIfMatch)
-// }
 
 func getMaxAge(r *http.Response) time.Duration {
 	// Get the Cache-Control header value

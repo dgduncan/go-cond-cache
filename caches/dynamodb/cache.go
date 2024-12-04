@@ -39,19 +39,6 @@ type cacheItem struct {
 	ExpiredAt int64  `json:"expired_at"`
 }
 
-// type Config struct {
-// 	Endpoint               string
-// 	Region                 string
-// 	Table                  string
-// 	DefaultCacheTTLSeconds int64
-// }
-
-// type Cache struct {
-// 	db *db.Client
-
-// 	table string
-// }
-
 // GetHTTPResponse retrieves an http.Response from Redis for given key
 func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
 	key, err := attributevalue.Marshal(k)
@@ -133,28 +120,6 @@ func NewDynamoDBCache(ctx context.Context, c *Config) (*Cache, error) {
 	}
 
 	client := dynamodb.NewFromConfig(awsConfig)
-
-	// if _, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
-	// 	TableName: aws.String("test"),
-	// 	AttributeDefinitions: []types.AttributeDefinition{
-	// 		types.AttributeDefinition{
-	// 			AttributeName: aws.String("URL"),
-	// 			AttributeType: types.ScalarAttributeTypeS,
-	// 		},
-	// 	},
-	// 	KeySchema: []types.KeySchemaElement{
-	// 		types.KeySchemaElement{
-	// 			AttributeName: aws.String("URL"),
-	// 			KeyType:       types.KeyTypeHash,
-	// 		},
-	// 	},
-	// 	ProvisionedThroughput: &types.ProvisionedThroughput{
-	// 		ReadCapacityUnits:  aws.Int64(5),
-	// 		WriteCapacityUnits: aws.Int64(5),
-	// 	},
-	// }); err != nil {
-	// 	panic(err)
-	// }
 
 	return &Cache{
 		client: client,
