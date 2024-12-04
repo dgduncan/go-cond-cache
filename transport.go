@@ -144,8 +144,13 @@ func getCacheControlHeader(r *http.Response) string {
 }
 
 // NewETAG placeholder
-func New(cache Cache) func(http.RoundTripper) http.RoundTripper {
+func New(cache Cache, now func() time.Time) func(http.RoundTripper) http.RoundTripper {
+	nowFunc := now
+	if now == nil {
+		nowFunc = time.Now
+	}
+
 	return func(rt http.RoundTripper) http.RoundTripper {
-		return &CacheTransport{Wrapped: rt, cache: cache}
+		return &CacheTransport{Wrapped: rt, cache: cache, now: nowFunc}
 	}
 }
