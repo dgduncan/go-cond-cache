@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -105,6 +106,30 @@ func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 	}
 
 	_, err = c.client.PutItem(ctx, &input)
+	return err
+}
+
+func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) error {
+	key, err := attributevalue.Marshal(k)
+	if err != nil {
+		return err
+	}
+
+	expirationString := strconv.FormatInt(expiration.UTC().Unix(), 10) // converting to UTC may not be
+
+	_, err = c.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(c.table),
+		Key: map[string]types.AttributeValue{
+			"URL": key,
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":expired_at": &types.AttributeValueMemberS{
+				Value: *aws.String(expirationString),
+			},
+		},
+		UpdateExpression: aws.String("SET expired_at = :expired_at"),
+	})
+
 	return err
 }
 

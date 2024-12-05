@@ -55,9 +55,8 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		// cache item as been revalidated as the response is 304
 		maxAge := getMaxAge(resp)
-		item.Expiration = c.now().UTC().Add(maxAge) // keep same cached response but update expiration
 
-		if err := c.cache.Set(ctx, r.URL.String(), item); err != nil {
+		if err := c.cache.Update(ctx, r.URL.String(), c.now().UTC().Add(maxAge)); err != nil {
 			return resp, errors.Join(err, transportError) // return original http response and error
 		}
 

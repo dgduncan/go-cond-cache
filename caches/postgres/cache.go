@@ -29,11 +29,13 @@ var (
 	queryFetchByID string
 	//go:embed insert_item.sql
 	queryInsertItem string
+	//go:embed update_item.sql
+	queryUpdateItem string
 )
 
 type Config struct {
 	DeleteExpiredItems bool          // Controls if background task runs to delete expired items from the database
-	ExpiredTaskTimer   time.Duration // How often the background rask runs to delete expired items. Shorter durations can cause unecessary DB overhead
+	ExpiredTaskTimer   time.Duration // How often the background rask runs to delete expired items. Shorter durations can cause unnecessary DB overhead
 
 	ItemExpiration time.Duration // How long a items stays valid in the database. This is independent of the expiration retrieved from the conditional response.
 }
@@ -49,6 +51,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	if err != nil {
 		return nil, err
 	}
+	defer stmt.Close()
 
 	row := stmt.QueryRowContext(ctx, k, p.now().UTC())
 	if err := row.Err(); err != nil {
@@ -80,6 +83,7 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
@@ -88,6 +92,17 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 	}
 
 	_, err = stmt.ExecContext(ctx, k, buff.Bytes(), p.now().UTC().Add(caches.DefaultExpiredDuration))
+	return err
+}
+
+func (bc *Cache) Update(ctx context.Context, key string, expiration time.Time) error {
+	stmt, err := bc.db.PrepareContext(ctx, queryUpdateItem)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.ExecContext(ctx, key, expiration)
 	return err
 }
 

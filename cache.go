@@ -19,4 +19,5 @@ type CacheItem struct {
 type Cache interface {
 	Get(ctx context.Context, k string) (*CacheItem, error)
 	Set(ctx context.Context, k string, v *CacheItem) error
+	Update(ctx context.Context, k string, expiration time.Time) error
 }
