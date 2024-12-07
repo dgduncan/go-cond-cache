@@ -13,13 +13,13 @@ func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint
 		TableName: aws.String("test"),
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
-				AttributeName: aws.String("URL"),
+				AttributeName: aws.String("url"),
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{
-				AttributeName: aws.String("URL"),
+				AttributeName: aws.String("url"),
 				KeyType:       types.KeyTypeHash,
 			},
 		},

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -33,11 +32,11 @@ type Cache struct {
 }
 
 type cacheItem struct {
-	URL       string `json:"url"`
-	Response  []byte `json:"response"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
-	ExpiredAt int64  `json:"expired_at"`
+	URL       string `json:"url" dynamodbav:"url"`
+	Response  []byte `json:"response" dynamodbav:"response"`
+	CreatedAt int64  `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt int64  `json:"updated_at" dynamodbav:"updated_at"`
+	ExpiredAt int64  `json:"expired_at" dynamodbav:"expired_at"`
 }
 
 // GetHTTPResponse retrieves an http.Response from Redis for given key
@@ -49,7 +48,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 
 	output, err := p.client.GetItem(ctx, &dynamodb.GetItemInput{
 		Key: map[string]types.AttributeValue{
-			"URL": key,
+			"url": key,
 		},
 		ConsistentRead: aws.Bool(true),
 		TableName:      aws.String(p.table),
@@ -80,7 +79,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 
 // StoreHTTPResponse stores an http.Response in Redis
 func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
-	createdAt := c.now().UTC()
+	createdAt := c.now()
 
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
@@ -120,7 +119,7 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 	_, err = c.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(c.table),
 		Key: map[string]types.AttributeValue{
-			"URL": key,
+			"url": key,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":expired_at": &types.AttributeValueMemberS{
@@ -133,23 +132,22 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 	return err
 }
 
-func NewDynamoDBCache(ctx context.Context, c *Config) (*Cache, error) {
-	var itemExpiration time.Duration
-	if c.ItemExpiration == 0 {
-		itemExpiration = caches.DefaultExpiredDuration
-	}
-	awsConfig, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(c.Region))
-	if err != nil {
-		return nil, err
+func NewDynamoDBCache(ctx context.Context, client *dynamodb.Client, config *Config) (*Cache, error) {
+	if client == nil {
+		return nil, caches.ErrValidation
 	}
 
-	client := dynamodb.NewFromConfig(awsConfig)
+	var itemExpiration time.Duration
+	if config.ItemExpiration == 0 {
+		itemExpiration = caches.DefaultExpiredDuration
+	} else {
+		itemExpiration = config.ItemExpiration
+	}
 
 	return &Cache{
 		client: client,
 
-		table:      c.Table,
+		table:      config.Table,
 		expiration: itemExpiration,
 		now:        time.Now,
 	}, nil
