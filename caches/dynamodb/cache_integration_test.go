@@ -127,7 +127,7 @@ func TestGetIntegration(t *testing.T) {
 				ItemExpiration: 1 * time.Minute,
 			})
 			if err != nil {
-				t.Fail()
+				t.FailNow()
 				return
 			}
 
