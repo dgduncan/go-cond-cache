@@ -4,7 +4,6 @@ package dynamodb
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -12,13 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	gocondcache "github.com/dgduncan/go-cond-cache"
 	"github.com/stretchr/testify/assert"
 )
 
 func setup(t *testing.T) (*dynamodb.Client, error) {
-	t.Log("setup called")
+	t.Setenv("AWS_ACCESS_KEY_ID", "DUMMYIDEXAMPLE")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "DUMMYEXAMPLEKEY")
 
 	awsconfig, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("local"))
 	if err != nil {
@@ -35,29 +34,10 @@ func setup(t *testing.T) (*dynamodb.Client, error) {
 		return nil, err
 	}
 
-	key, err := attributevalue.Marshal("hello")
-	if err != nil {
-		return nil, err
-	}
-	output, err := c.GetItem(context.Background(), &dynamodb.GetItemInput{
-		Key: map[string]types.AttributeValue{
-			"url": key,
-		},
-		ConsistentRead: aws.Bool(true),
-		TableName:      aws.String("test"),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(output.Item == nil)
-
 	return c, nil
 }
 
 func cleanup(t *testing.T, c *dynamodb.Client) {
-	t.Log("cleanup called")
-
 	output, err := c.ListTables(context.Background(), &dynamodb.ListTablesInput{})
 	if err != nil {
 		t.Log(err)
