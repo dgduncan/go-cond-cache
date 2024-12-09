@@ -1,9 +1,7 @@
 package dynamodb
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"strconv"
 	"time"
 
@@ -19,7 +17,6 @@ type Config struct {
 	DeleteExpiredItems bool // Controls if a the expired_at TTL property is put in the database to allow automatic deletion of expired items
 
 	ItemExpiration time.Duration // How long a items stays valid in the database. This is independent of the expiration retrieved from the conditional response.
-	Region         string
 	Table          string
 }
 
@@ -57,6 +54,10 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 		return nil, err
 	}
 
+	if output.Item == nil {
+		return nil, nil
+	}
+
 	var item cacheItem
 	if err := attributevalue.UnmarshalMap(output.Item, &item); err != nil {
 		return nil, err
@@ -66,11 +67,8 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 		return nil, nil
 	}
 
-	buff := bytes.NewBuffer(item.Response)
-	dec := gob.NewDecoder(buff)
-
 	var ci gocondcache.CacheItem
-	if err := dec.Decode(&ci); err != nil {
+	if err := gobDecode(item.Response, &ci); err != nil {
 		return nil, err
 	}
 
@@ -81,15 +79,14 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
 	createdAt := c.now()
 
-	var buff bytes.Buffer
-	enc := gob.NewEncoder(&buff)
-	if err := enc.Encode(v); err != nil {
+	encItem, err := gobEncode(v)
+	if err != nil {
 		return err
 	}
 
 	i := cacheItem{
 		URL:       k,
-		Response:  buff.Bytes(),
+		Response:  encItem,
 		CreatedAt: createdAt.Unix(),
 		ExpiredAt: createdAt.Add(c.expiration).Unix(),
 	}
@@ -132,9 +129,11 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 	return err
 }
 
-func NewDynamoDBCache(ctx context.Context, client *dynamodb.Client, config *Config) (*Cache, error) {
+func New(ctx context.Context, client *dynamodb.Client, config *Config) (*Cache, error) {
 	if client == nil {
-		return nil, caches.ErrValidation
+		return nil, caches.ValidationError{
+			Reason: "nil client",
+		}
 	}
 
 	var itemExpiration time.Duration
