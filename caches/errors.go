@@ -6,7 +6,6 @@ import (
 )
 
 type ValidationError struct {
-	// Err    error
 	Reason string
 }
 
@@ -16,4 +15,7 @@ func (ve ValidationError) Error() string {
 }
 
 // TODO : This should be a more specific error
-var ErrValidation = errors.New("validation error")
+var (
+	ErrCacheItemExpired = errors.New("cache item expired")
+	ErrNoCacheItem      = errors.New("no value found in cache")
+)

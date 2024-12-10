@@ -6,6 +6,7 @@ import (
 	"time"
 
 	gocondcache "github.com/dgduncan/go-cond-cache"
+	"github.com/dgduncan/go-cond-cache/caches"
 )
 
 type BasicCache struct {
@@ -20,7 +21,7 @@ func (bc *BasicCache) Get(_ context.Context, key string) (*gocondcache.CacheItem
 
 	val, found := bc.cache[key]
 	if !found {
-		return nil, gocondcache.ErrNotFound
+		return nil, caches.ErrNoCacheItem
 	}
 
 	return val, nil

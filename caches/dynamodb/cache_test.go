@@ -27,7 +27,7 @@ func TestNewDynamoDBCache(t *testing.T) {
 				ItemExpiration: time.Hour,
 			},
 			expectedCache: nil,
-			expectedErr:   caches.ErrValidation,
+			expectedErr:   caches.ErrNoCacheItem,
 		},
 		{
 			name:   "zero item expiration uses default",

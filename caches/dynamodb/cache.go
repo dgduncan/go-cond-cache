@@ -55,7 +55,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	}
 
 	if output.Item == nil {
-		return nil, nil
+		return nil, caches.ErrNoCacheItem
 	}
 
 	var item cacheItem
@@ -64,7 +64,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	}
 
 	if p.now().UTC().Unix() >= item.ExpiredAt {
-		return nil, nil
+		return nil, caches.ErrCacheItemExpired
 	}
 
 	var ci gocondcache.CacheItem

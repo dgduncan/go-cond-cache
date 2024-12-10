@@ -2,12 +2,7 @@ package gocondcache
 
 import (
 	"context"
-	"errors"
 	"time"
-)
-
-var (
-	ErrNotFound = errors.New("cache item not found")
 )
 
 type CacheItem struct {

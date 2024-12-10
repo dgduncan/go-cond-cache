@@ -56,7 +56,7 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	row := stmt.QueryRowContext(ctx, k, p.now().UTC())
 	if err := row.Err(); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, gocondcache.ErrNotFound
+			return nil, caches.ErrNoCacheItem
 		}
 		return nil, err
 	}
