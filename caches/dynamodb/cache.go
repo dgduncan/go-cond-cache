@@ -112,6 +112,7 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 	}
 
 	expirationString := strconv.FormatInt(expiration.UTC().Unix(), 10) // converting to UTC may not be
+	updatedAtString := strconv.FormatInt(c.now().UTC().Unix(), 10)
 
 	_, err = c.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(c.table),
@@ -120,10 +121,13 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":expired_at": &types.AttributeValueMemberS{
-				Value: *aws.String(expirationString),
+				Value: expirationString,
+			},
+			":updated_at": &types.AttributeValueMemberS{
+				Value: updatedAtString,
 			},
 		},
-		UpdateExpression: aws.String("SET expired_at = :expired_at"),
+		UpdateExpression: aws.String("SET expired_at = :expired_at, updated_at = :updated_at"),
 	})
 
 	return err

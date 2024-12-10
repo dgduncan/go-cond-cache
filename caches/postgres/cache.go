@@ -102,7 +102,7 @@ func (bc *Cache) Update(ctx context.Context, key string, expiration time.Time) e
 	}
 	defer stmt.Close()
 
-	_, err = stmt.ExecContext(ctx, key, expiration)
+	_, err = stmt.ExecContext(ctx, key, expiration, bc.now().UTC())
 	return err
 }
 
