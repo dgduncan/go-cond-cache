@@ -57,6 +57,10 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	resp, transportError := c.Wrapped.RoundTrip(r)
+	if transportError != nil {
+		return resp, transportError
+	}
+
 	if resp.StatusCode == http.StatusNotModified {
 		// cache item as been revalidated as the response is 304
 		c.logger.DebugContext(ctx, "cache item sucesfully revalidated", "url", r.URL.String())
