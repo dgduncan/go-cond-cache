@@ -3,7 +3,8 @@ package gocondcache
 import (
 	"bufio"
 	"bytes"
-	"fmt"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-type conditionalHeader string
+// type conditionalHeader string
 
 const (
 	cacheControlMaxAge = "max-age"
@@ -22,15 +23,17 @@ const (
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"
-	headerIfMofifiedSince   = "If-Modified-Since"
-	headerIfUnmodifiedSince = "If-Unmodified-Since"
+	// headerLastModified      = "Last-Modified"
+	// headerIfMofifiedSince   = "If-Modified-Since"
+	// headerIfUnmodifiedSince = "If-Unmodified-Since"
 )
 
 type CacheTransport struct {
 	Wrapped http.RoundTripper
 
-	cache Cache
+	cache  Cache
+	logger *slog.Logger
+	now    func() time.Time
 }
 
 func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -39,68 +42,58 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// check if request contains conditional header, exit early if not present
 	item, err := c.cache.Get(ctx, r.URL.String())
 	if err == nil {
+		c.logger.DebugContext(ctx, "cache item found", "url", r.URL.String())
+
 		// cached item is still valid
-		if time.Now().UTC().Before(item.Expiration) {
+		if c.now().UTC().Before(item.Expiration) {
 			nr := bufio.NewReader(bytes.NewReader(item.Response))
 			return http.ReadResponse(nr, nil)
 		}
 
-		// check if item is still valid by adding etag to conditional requesst
+		// item has been found in the cache but is expired
+		// check if item is still valid by adding etag to conditional request
+		c.logger.DebugContext(ctx, "cache item expired, attempting revalidation", "url", r.URL.String(), "expiration", item.Expiration.Format(time.RFC3339))
 		r.Header.Add(headerIfNoneMatch, item.ETAG)
 	}
 
 	resp, transportError := c.Wrapped.RoundTrip(r)
+	if transportError != nil {
+		return resp, transportError
+	}
+
 	if resp.StatusCode == http.StatusNotModified {
-		item, err := c.cache.Get(ctx, r.URL.String())
-		if err != nil {
-			return resp, transportError
-		}
-
+		// cache item as been revalidated as the response is 304
+		c.logger.DebugContext(ctx, "cache item sucesfully revalidated", "url", r.URL.String())
 		maxAge := getMaxAge(resp)
-		item.Expiration = time.Now().Add(maxAge)
 
-		if err := c.cache.Set(ctx, r.URL.String(), item); err != nil {
-			return resp, transportError
+		c.logger.DebugContext(ctx, "updating cache item", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge).Format(time.RFC3339))
+		if err := c.cache.Update(ctx, r.URL.String(), c.now().UTC().Add(maxAge)); err != nil {
+			return resp, errors.Join(err, transportError) // return original http response and error
 		}
 
 		nr := bufio.NewReader(bytes.NewReader(item.Response))
 		return http.ReadResponse(nr, nil)
 	}
 
+	// check if response contains conditional request header i.e etag
 	if getETAGHeader(resp) == "" { // if no etag header is found, we don't cache the response
+		c.logger.DebugContext(ctx, "no etag header found, not caching response", "url", r.URL.String())
 		return resp, transportError
 	}
 
+	// cache the response
+	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String())
 	maxAge := getMaxAge(resp)
 	resBytes, _ := httputil.DumpResponse(resp, true)
 	if err := c.cache.Set(ctx, r.URL.String(), &CacheItem{
 		ETAG:       resp.Header.Get(headerETAG),
 		Response:   resBytes,
-		Expiration: time.Now().Add(maxAge),
+		Expiration: c.now().UTC().Add(maxAge),
 	}); err != nil {
-		slog.Debug("error caching response", "error", err)
+		c.logger.WarnContext(ctx, "error caching response", "error", err)
 	}
 
 	return resp, transportError
-}
-
-func containsConditionalHeader(r *http.Request) bool {
-	headers := r.Header
-
-	for k, v := range headers {
-		fmt.Println(k, v)
-	}
-
-	return false
-}
-
-func getConditionHeader(r *http.Request) string {
-	etag := r.Header.Get(headerIfNoneMatch)
-	if etag != "" {
-		return etag
-	}
-
-	return r.Header.Get(headerIfMatch)
 }
 
 func getMaxAge(r *http.Response) time.Duration {
@@ -144,8 +137,17 @@ func getCacheControlHeader(r *http.Response) string {
 }
 
 // NewETAG placeholder
-func New(cache Cache) func(http.RoundTripper) http.RoundTripper {
+func New(cache Cache, now func() time.Time, logger *slog.Logger) func(http.RoundTripper) http.RoundTripper {
+	nowFunc := now
+	if now == nil {
+		nowFunc = time.Now
+	}
+
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
 	return func(rt http.RoundTripper) http.RoundTripper {
-		return &CacheTransport{Wrapped: rt, cache: cache}
+		return &CacheTransport{Wrapped: rt, cache: cache, now: nowFunc, logger: logger}
 	}
 }
