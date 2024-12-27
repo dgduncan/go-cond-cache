@@ -34,19 +34,32 @@ var (
 	queryUpdateItem string
 )
 
+// Config defines the configuration options for the PostgreSQL cache implementation.
 type Config struct {
-	DeleteExpiredItems bool          // Controls if background task runs to delete expired items from the database
-	ExpiredTaskTimer   time.Duration // How often the background rask runs to delete expired items. Shorter durations can cause unnecessary DB overhead
+	// DeleteExpiredItems enables automatic cleanup of expired cache entries
+	// through a background task.
+	DeleteExpiredItems bool
 
-	ItemExpiration time.Duration // How long a items stays valid in the database. This is independent of the expiration retrieved from the conditional response.
+	// ExpiredTaskTimer defines the interval at which the cleanup task runs.
+	// Shorter durations may impact database performance.
+	ExpiredTaskTimer time.Duration
+
+	// ItemExpiration defines how long items remain valid in the database.
+	// This is separate from the expiration time derived from conditional response headers.
+	ItemExpiration time.Duration
 }
 
+// Cache implements the gocondcache.Cache interface using PostgreSQL as the storage backend.
+// It provides thread-safe operations for storing and retrieving cached HTTP responses.
 type Cache struct {
 	db *sql.DB
 
 	now func() time.Time
 }
 
+// Get retrieves a cache item from PostgreSQL by its key. It returns the cached item
+// if found and not expired, or an appropriate error otherwise.
+// Returns caches.ErrNoCacheItem if the item doesn't exist.
 func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
 	stmt, err := p.db.PrepareContext(ctx, queryFetchByID)
 	if err != nil {
@@ -79,6 +92,8 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	return &item, nil
 }
 
+// Set stores a new cache item in PostgreSQL with the provided key and value.
+// It handles the serialization of the cache item using gob encoding.
 func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
 	stmt, err := p.db.PrepareContext(ctx, queryInsertItem)
 	if err != nil {
@@ -96,6 +111,8 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 	return err
 }
 
+// Update modifies the expiration time of an existing cache item in PostgreSQL.
+// This is typically used when a cached response is revalidated with the origin server
 func (bc *Cache) Update(ctx context.Context, key string, expiration time.Time) error {
 	stmt, err := bc.db.PrepareContext(ctx, queryUpdateItem)
 	if err != nil {
@@ -148,7 +165,15 @@ func expiredTask(ctx context.Context, db *sql.DB) {
 	}
 }
 
-func NewPostgresCache(ctx context.Context, db *sql.DB, config *Config) (*Cache, error) {
+// New creates a new PostgreSQL cache instance with the provided configuration.
+// It verifies the database connection, creates the necessary table structure, and
+// optionally starts the cleanup task for expired items.
+//
+// Returns an error if:
+// - The database connection test fails
+// - Table creation fails
+// - Configuration validation fails
+func New(ctx context.Context, db *sql.DB, config *Config) (*Cache, error) {
 	if err := db.PingContext(ctx); err != nil {
 		return nil, errors.Join(ErrPingFailed, err)
 	}
