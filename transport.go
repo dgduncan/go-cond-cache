@@ -28,6 +28,9 @@ const (
 	// headerIfUnmodifiedSince = "If-Unmodified-Since"
 )
 
+// CacheTransport implements http.RoundTripper and provides caching functionality
+// for HTTP requests. It handles cache validation using ETags and manages cache
+// expiration based on Cache-Control headers.
 type CacheTransport struct {
 	Wrapped http.RoundTripper
 
@@ -36,6 +39,15 @@ type CacheTransport struct {
 	now    func() time.Time
 }
 
+// RoundTrip implements http.RoundTripper interface and handles the caching logic
+// for HTTP requests. It attempts to serve cached responses when valid, handles
+// cache revalidation with ETags, and caches new responses when appropriate.
+//
+// The process follows these steps:
+// 1. Checks for existing cache entry
+// 2. Returns cached response if valid
+// 3. Attempts revalidation if expired
+// 4. Caches new responses with ETags
 func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 
@@ -63,7 +75,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	if resp.StatusCode == http.StatusNotModified {
 		// cache item as been revalidated as the response is 304
-		c.logger.DebugContext(ctx, "cache item sucesfully revalidated", "url", r.URL.String())
+		c.logger.DebugContext(ctx, "cache item successfully revalidated", "url", r.URL.String())
 		maxAge := getMaxAge(resp)
 
 		c.logger.DebugContext(ctx, "updating cache item", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge).Format(time.RFC3339))
@@ -136,10 +148,21 @@ func getCacheControlHeader(r *http.Response) string {
 	return r.Header.Get(headerCacheControl)
 }
 
-// NewETAG placeholder
+// New creates a transport middleware that adds caching capabilities to an HTTP RoundTripper.
+// It implements conditional request caching using ETags and enables cache revalidation.
+//
+// The middleware uses the provided Cache implementation for storing and retrieving cached responses.
+// If the 'now' function is nil, time.Now will be used as the default time provider.
+// If the 'logger' is nil, a no-op logger writing to io.Discard will be used.
+//
+// The returned function wraps the given http.RoundTripper with caching functionality:
+//   - Caches responses that contain ETag headers
+//   - Handles cache revalidation using If-None-Match headers
+//   - Respects Cache-Control max-age directives for expiration
+//   - Logs cache operations when a logger is provided
 func New(cache Cache, now func() time.Time, logger *slog.Logger) func(http.RoundTripper) http.RoundTripper {
 	nowFunc := now
-	if now == nil {
+	if nowFunc == nil {
 		nowFunc = time.Now
 	}
 

@@ -53,7 +53,7 @@ func cleanup(t *testing.T, c *dynamodb.Client) {
 	}
 }
 
-func putCacheItem(t *testing.T, c *dynamodb.Client) error {
+func putCacheItem(_ *testing.T, c *dynamodb.Client) error {
 	ci := gocondcache.CacheItem{
 		ETAG:       "etag",
 		Response:   []byte{},

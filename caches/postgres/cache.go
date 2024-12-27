@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	// ErrPingFailed is returned if the initial ping to the database returns an error
 	ErrPingFailed = errors.New("ping returned error")
 )
 
