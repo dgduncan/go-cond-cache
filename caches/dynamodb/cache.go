@@ -13,6 +13,7 @@ import (
 	"github.com/dgduncan/go-cond-cache/caches"
 )
 
+// Config defines the configuration options for the DynamoDB cache implementation.
 type Config struct {
 	DeleteExpiredItems bool // Controls if a the expired_at TTL property is put in the database to allow automatic deletion of expired items
 
@@ -20,6 +21,9 @@ type Config struct {
 	Table          string
 }
 
+// Cache implements the gocondcache.Cache interface using Amazon DynamoDB as the storage backend.
+// It handles the storage, retrieval, and updating of cached HTTP responses with their associated
+// metadata.
 type Cache struct {
 	client *dynamodb.Client
 
@@ -36,7 +40,8 @@ type cacheItem struct {
 	ExpiredAt int64  `json:"expired_at" dynamodbav:"expired_at"`
 }
 
-// GetHTTPResponse retrieves an http.Response from Redis for given key
+// Get retrieves a cache item from DynamoDB by its key. It returns the cached item
+// if found and not expired, or an appropriate error otherwise.
 func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
 	key, err := attributevalue.Marshal(k)
 	if err != nil {
@@ -75,7 +80,8 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	return &ci, nil
 }
 
-// StoreHTTPResponse stores an http.Response in Redis
+// Set stores a new cache item in DynamoDB with the provided key and value.
+// It handles the serialization of the cache item and sets the appropriate timestamps.
 func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) error {
 	createdAt := c.now()
 
@@ -105,6 +111,8 @@ func (c *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 	return err
 }
 
+// Update modifies the expiration time of an existing cache item in DynamoDB.
+// This is typically used when a cached response is revalidated with the origin server.
 func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) error {
 	key, err := attributevalue.Marshal(k)
 	if err != nil {
@@ -133,6 +141,9 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 	return err
 }
 
+// New creates a new DynamoDB cache instance with the provided configuration.
+// It validates the configuration and sets default values where appropriate.
+// Returns an error if the client is nil or if the configuration is invalid.
 func New(ctx context.Context, client *dynamodb.Client, config *Config) (*Cache, error) {
 	if client == nil {
 		return nil, caches.ValidationError{
