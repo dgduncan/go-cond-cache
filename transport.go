@@ -3,6 +3,7 @@ package gocondcache
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -10,6 +11,8 @@ import (
 	"net/http/httputil"
 	"strings"
 	"time"
+
+	"github.com/dgduncan/go-cond-cache/caches"
 )
 
 // type conditionalHeader string
@@ -21,9 +24,9 @@ const (
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"
-	headerIfMofifiedSince   = "If-Modified-Since"
-	headerIfUnmodifiedSince = "If-Unmodified-Since"
+	headerLastModified      = "Last-Modified"       //nolint
+	headerIfMofifiedSince   = "If-Modified-Since"   //nolint
+	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint
 )
 
 const (
@@ -56,22 +59,23 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 
 	// check if cached value exists within the cache
-	item, err := c.cache.Get(ctx, r.URL.String())
+	item, err := c.cache.Get(ctx, caches.Key(*r))
 	if err == nil { // cache hit
 		c.logger.DebugContext(ctx, "cache item found", "url", r.URL.String())
 
-		// cached item is still valid
-		if c.now().UTC().Before(item.Expiration) {
-			nr := bufio.NewReader(bytes.NewReader(item.Response))
-			return http.ReadResponse(nr, nil)
-		}
+		nr := bufio.NewReader(bytes.NewReader(item.Response))
+		return http.ReadResponse(nr, nil)
+	}
 
+	// cache miss
+	if errors.Is(err, caches.ErrCacheItemExpired) {
 		// item has been found in the cache but is expired
 		// check if item is still valid by adding etag to conditional request
-		c.logger.DebugContext(ctx, "cache item expired, attempting revalidation", "url", r.URL.String(), "expiration", item.Expiration.Format(time.RFC3339))
+		c.logger.DebugContext(ctx, "cache item expired, attempting revalidation",
+			"url", r.URL.String(),
+			"expiration", item.Expiration.Format(time.RFC3339))
 		r.Header.Add(headerIfNoneMatch, item.ETAG)
 	} else {
-		// cache miss
 		c.logger.DebugContext(ctx, "cache item not found", "url", r.URL.String())
 	}
 
@@ -80,13 +84,18 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return resp, transportError
 	}
 
+	if resp.StatusCode != http.StatusPreconditionFailed && (resp.StatusCode < 200 || resp.StatusCode > 399) {
+		return resp, transportError
+	}
+
+	// re-validation sucesfull
 	if resp.StatusCode == http.StatusNotModified {
 		// cache item as been revalidated as the response is 304
 		c.logger.DebugContext(ctx, "cache item successfully revalidated", "url", r.URL.String())
-		maxAge := getMaxAge(resp)
+		maxAge := getTimeToCache(resp, c.c.DomainOverrides)
 
 		c.logger.DebugContext(ctx, "updating cache item", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge).Format(time.RFC3339))
-		if err := c.cache.Update(ctx, r.URL.String(), c.now().UTC().Add(maxAge)); err != nil {
+		if err := c.cache.Update(ctx, caches.Key(*resp.Request), c.now().UTC().Add(maxAge)); err != nil {
 			return resp, errors.Join(err, transportError) // return original http response and error
 		}
 
@@ -101,10 +110,10 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	// cache the response
-	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String())
 	maxAge := getTimeToCache(resp, c.c.DomainOverrides)
+	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge))
 	resBytes, _ := httputil.DumpResponse(resp, true)
-	if err := c.cache.Set(ctx, r.URL.String(), &CacheItem{
+	if err := c.cache.Set(ctx, caches.Key(*resp.Request), &CacheItem{
 		ETAG:       resp.Header.Get(headerETAG),
 		Response:   resBytes,
 		Expiration: c.now().UTC().Add(maxAge),
@@ -119,6 +128,7 @@ func getTimeToCache(r *http.Response, c []DomainOverride) time.Duration {
 	// check to see if any domain overrides exist
 	for _, v := range c {
 		if strings.HasPrefix(r.Request.URL.Host+r.Request.URL.Path, v.URI) {
+			slog.DebugContext(context.Background(), "caching override found")
 			return v.Duration
 		}
 	}
@@ -192,6 +202,8 @@ func New(cache Cache, opts *Config, now func() time.Time, logger *slog.Logger) f
 	c := Config{}
 	if opts == nil {
 		c = DefaultConfig()
+	} else {
+		c = *opts
 	}
 
 	return func(rt http.RoundTripper) http.RoundTripper {

@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -24,6 +25,10 @@ func (bc *BasicCache) Get(_ context.Context, key string) (*gocondcache.CacheItem
 		return nil, caches.ErrNoCacheItem
 	}
 
+	if time.Now().UTC().After(val.Expiration) {
+		return val, caches.ErrCacheItemExpired
+	}
+
 	return val, nil
 }
 
@@ -42,7 +47,7 @@ func (bc *BasicCache) Update(_ context.Context, key string, expiration time.Time
 	// NOTE : this may cause a race condition because of the use of a double lock compared to a larger single lock
 	// that encompasses the read and write operations
 	item, err := bc.Get(ctx, key)
-	if err != nil {
+	if err != nil && !errors.Is(err, caches.ErrCacheItemExpired) {
 		return err
 	}
 	item.Expiration = expiration

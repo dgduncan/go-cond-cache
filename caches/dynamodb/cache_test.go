@@ -12,6 +12,8 @@ import (
 )
 
 func TestNewDynamoDBCache(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		client        *dynamodb.Client
@@ -27,7 +29,9 @@ func TestNewDynamoDBCache(t *testing.T) {
 				ItemExpiration: time.Hour,
 			},
 			expectedCache: nil,
-			expectedErr:   caches.ErrNoCacheItem,
+			expectedErr: caches.ValidationError{
+				Reason: "nil client",
+			},
 		},
 		{
 			name:   "zero item expiration uses default",

@@ -68,13 +68,13 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 		return nil, err
 	}
 
-	if p.now().UTC().Unix() >= item.ExpiredAt {
-		return nil, caches.ErrCacheItemExpired
-	}
-
 	var ci gocondcache.CacheItem
 	if err := gobDecode(item.Response, &ci); err != nil {
 		return nil, err
+	}
+
+	if p.now().UTC().Unix() >= ci.Expiration.UTC().Unix() {
+		return &ci, caches.ErrCacheItemExpired
 	}
 
 	return &ci, nil
