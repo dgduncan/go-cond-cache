@@ -15,17 +15,19 @@ import (
 // type conditionalHeader string
 
 const (
-	cacheControlMaxAge = "max-age"
-
 	headerCacheControl = "cache-control"
 	headerETAG         = "etag"
 
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	// headerLastModified      = "Last-Modified"
-	// headerIfMofifiedSince   = "If-Modified-Since"
-	// headerIfUnmodifiedSince = "If-Unmodified-Since"
+	headerLastModified      = "Last-Modified"
+	headerIfMofifiedSince   = "If-Modified-Since"
+	headerIfUnmodifiedSince = "If-Unmodified-Since"
+)
+
+const (
+	directiveCacheControlMaxAge = "max-age"
 )
 
 // CacheTransport implements http.RoundTripper and provides caching functionality
@@ -37,6 +39,8 @@ type CacheTransport struct {
 	cache  Cache
 	logger *slog.Logger
 	now    func() time.Time
+
+	c Config
 }
 
 // RoundTrip implements http.RoundTripper interface and handles the caching logic
@@ -51,9 +55,9 @@ type CacheTransport struct {
 func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 
-	// check if request contains conditional header, exit early if not present
+	// check if cached value exists within the cache
 	item, err := c.cache.Get(ctx, r.URL.String())
-	if err == nil {
+	if err == nil { // cache hit
 		c.logger.DebugContext(ctx, "cache item found", "url", r.URL.String())
 
 		// cached item is still valid
@@ -66,6 +70,9 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		// check if item is still valid by adding etag to conditional request
 		c.logger.DebugContext(ctx, "cache item expired, attempting revalidation", "url", r.URL.String(), "expiration", item.Expiration.Format(time.RFC3339))
 		r.Header.Add(headerIfNoneMatch, item.ETAG)
+	} else {
+		// cache miss
+		c.logger.DebugContext(ctx, "cache item not found", "url", r.URL.String())
 	}
 
 	resp, transportError := c.Wrapped.RoundTrip(r)
@@ -95,7 +102,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	// cache the response
 	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String())
-	maxAge := getMaxAge(resp)
+	maxAge := getTimeToCache(resp, c.c.DomainOverrides)
 	resBytes, _ := httputil.DumpResponse(resp, true)
 	if err := c.cache.Set(ctx, r.URL.String(), &CacheItem{
 		ETAG:       resp.Header.Get(headerETAG),
@@ -106,6 +113,18 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	return resp, transportError
+}
+
+func getTimeToCache(r *http.Response, c []DomainOverride) time.Duration {
+	// check to see if any domain overrides exist
+	for _, v := range c {
+		if strings.HasPrefix(r.Request.URL.Host+r.Request.URL.Path, v.URI) {
+			return v.Duration
+		}
+	}
+
+	// Get the Cache-Control header value
+	return getMaxAge(r)
 }
 
 func getMaxAge(r *http.Response) time.Duration {
@@ -125,7 +144,7 @@ func getMaxAge(r *http.Response) time.Duration {
 	var maxAge time.Duration
 	// Find the max-age directive
 	for _, directive := range directives {
-		if strings.HasPrefix(directive, cacheControlMaxAge) {
+		if strings.HasPrefix(directive, string(directiveCacheControlMaxAge)) {
 			// Split the directive by the equals sign
 			parts := strings.Split(directive, "=")
 			if parts[1] == "" {
@@ -160,7 +179,7 @@ func getCacheControlHeader(r *http.Response) string {
 //   - Handles cache revalidation using If-None-Match headers
 //   - Respects Cache-Control max-age directives for expiration
 //   - Logs cache operations when a logger is provided
-func New(cache Cache, now func() time.Time, logger *slog.Logger) func(http.RoundTripper) http.RoundTripper {
+func New(cache Cache, opts *Config, now func() time.Time, logger *slog.Logger) func(http.RoundTripper) http.RoundTripper {
 	nowFunc := now
 	if nowFunc == nil {
 		nowFunc = time.Now
@@ -170,7 +189,12 @@ func New(cache Cache, now func() time.Time, logger *slog.Logger) func(http.Round
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
+	c := Config{}
+	if opts == nil {
+		c = DefaultConfig()
+	}
+
 	return func(rt http.RoundTripper) http.RoundTripper {
-		return &CacheTransport{Wrapped: rt, cache: cache, now: nowFunc, logger: logger}
+		return &CacheTransport{Wrapped: rt, cache: cache, now: nowFunc, logger: logger, c: c}
 	}
 }

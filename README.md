@@ -11,6 +11,10 @@ This library provides a caching mechanism for handling conditional HTTP requests
 
 The cache helps reduce unnecessary data transfer and server load by properly handling ETags and Last-Modified headers.
 
+## Supported Functionalities
+
+
+
 ## Features
 
 - Multiple storage backend options
