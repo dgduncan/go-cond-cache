@@ -11,6 +11,16 @@ import (
 	"github.com/dgduncan/go-cond-cache/caches"
 )
 
+const (
+	tableName = "test-table"
+)
+
+var (
+	testingTime = func() time.Time {
+		return time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	}
+)
+
 func TestNewDynamoDBCache(t *testing.T) {
 	t.Parallel()
 
@@ -25,7 +35,7 @@ func TestNewDynamoDBCache(t *testing.T) {
 			name:   "nil client returns error",
 			client: nil,
 			config: &Config{
-				Table:          "test-table",
+				Table:          tableName,
 				ItemExpiration: time.Hour,
 			},
 			expectedCache: nil,
@@ -37,14 +47,14 @@ func TestNewDynamoDBCache(t *testing.T) {
 			name:   "zero item expiration uses default",
 			client: &dynamodb.Client{},
 			config: &Config{
-				Table:          "test-table",
+				Table:          tableName,
 				ItemExpiration: 0,
 			},
 			expectedCache: &Cache{
 				client:     &dynamodb.Client{},
-				table:      "test-table",
+				table:      tableName,
 				expiration: caches.DefaultExpiredDuration,
-				now:        time.Now,
+				now:        testingTime,
 			},
 			expectedErr: nil,
 		},
@@ -52,14 +62,14 @@ func TestNewDynamoDBCache(t *testing.T) {
 			name:   "custom item expiration",
 			client: &dynamodb.Client{},
 			config: &Config{
-				Table:          "test-table",
+				Table:          tableName,
 				ItemExpiration: time.Hour,
 			},
 			expectedCache: &Cache{
 				client:     &dynamodb.Client{},
-				table:      "test-table",
+				table:      tableName,
 				expiration: time.Hour,
-				now:        time.Now,
+				now:        testingTime,
 			},
 			expectedErr: nil,
 		},

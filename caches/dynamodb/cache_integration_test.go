@@ -15,6 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	tableName = "test-table"
+)
+
 func setup(t *testing.T) (*dynamodb.Client, error) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "DUMMYIDEXAMPLE")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "DUMMYEXAMPLEKEY")
@@ -101,6 +105,7 @@ func TestGetIntegration(t *testing.T) {
 		client      *dynamodb.Client
 		key         string
 		cacheHit    bool
+		expiration  time.Duration
 		expectedErr error
 	}{
 		{

@@ -11,7 +11,7 @@ import (
 type CacheItem struct {
 	ETAG       string
 	Response   []byte
-	Expiration time.Time // NOTE : look to see if expiration needs to be set from cache-control headers. This represents
+	Expiration time.Time
 }
 
 // Cache defines the interface for cache operations across different storage implementations.
