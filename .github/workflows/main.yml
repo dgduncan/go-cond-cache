@@ -73,4 +73,9 @@ jobs:
       #   run: make build-image
 
       - name: Run integration tests
-        run: make integration
+        run: make integration-ci
+        timeout-minutes: 3
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

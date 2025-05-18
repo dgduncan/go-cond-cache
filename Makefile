@@ -1,4 +1,4 @@
-.PHONY : build-image dep lint test integration up down
+.PHONY : build-image dep lint test integration integration-ci up down
 
 dep:
 	go mod tidy && go mod vendor
@@ -13,6 +13,10 @@ build-image:
 	docker build -t go-cond-cache:vlocal .
 
 integration: down up
+	go test --tags=integration -coverprofile=integration_coverage.out -v ./...
+	make down
+
+integration-ci: up
 	go test --tags=integration -coverprofile=integration_coverage.out -v ./...
 	make down
 
