@@ -1,1 +1,1 @@
-package gocondcache
+package gocondcache_test

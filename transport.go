@@ -18,15 +18,15 @@ import (
 // type conditionalHeader string
 
 const (
-	headerCacheControl = "cache-control"
+	headerCacheControl = "Cache-Control"
 	headerETAG         = "etag"
 
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"       //nolint
-	headerIfMofifiedSince   = "If-Modified-Since"   //nolint
-	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint
+	headerLastModified      = "Last-Modified"       //nolint:unused
+	headerIfMofifiedSince   = "If-Modified-Since"   //nolint:unused
+	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint:unused
 )
 
 const (

@@ -20,5 +20,4 @@ type ValidationError struct {
 // Error returns the string value of the error
 func (ve ValidationError) Error() string {
 	return fmt.Sprintf("creation of cache failed for reason : %s ", ve.Reason)
-
 }

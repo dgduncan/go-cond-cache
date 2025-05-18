@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint
+func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint:unused
 	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
 		TableName: aws.String("test"),
 		AttributeDefinitions: []types.AttributeDefinition{

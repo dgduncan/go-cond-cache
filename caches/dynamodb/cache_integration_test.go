@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	tableName = "test-table"
+	tableName = "test-table" //nolint:unused
 )
 
 func setup(t *testing.T) (*dynamodb.Client, error) {
