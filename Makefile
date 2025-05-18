@@ -16,7 +16,7 @@ integration: down up
 	go test --tags=integration -coverprofile=integration_coverage.out -v ./...
 	make down
 
-integration-ci: up
+integration-ci:
 	go test --tags=integration -coverprofile=integration_coverage.out -v ./...
 
 up:
