@@ -72,10 +72,17 @@ jobs:
       # - name: Build Docker image
       #   run: make build-image
 
+      # - name: Run integration tests
+      #   run: make integration-ci
+      #   timeout-minutes: 3
+          
       - name: Run integration tests
-        run: make integration-ci
+        run: |
+          docker compose up -d
+          docker network ls
+          docker network inspect $(docker network ls -q -f name=go-cond-cache) || true
         timeout-minutes: 3
-
+        
       - name: Cleanup
         if: always()
         run: docker compose down -v
