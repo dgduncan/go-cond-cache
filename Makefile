@@ -18,7 +18,6 @@ integration: down up
 
 integration-ci: up
 	go test --tags=integration -coverprofile=integration_coverage.out -v ./...
-	make down
 
 up:
 	docker compose up -d
