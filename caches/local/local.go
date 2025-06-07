@@ -16,6 +16,13 @@ type BasicCache struct {
 	lock *sync.RWMutex
 }
 
+func NewBasicCache() BasicCache {
+	return BasicCache{
+		cache: make(map[string]*gocondcache.CacheItem),
+		lock:  &sync.RWMutex{},
+	}
+}
+
 func (bc *BasicCache) Get(_ context.Context, key string) (*gocondcache.CacheItem, error) {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
@@ -53,11 +60,4 @@ func (bc *BasicCache) Update(_ context.Context, key string, expiration time.Time
 	item.Expiration = expiration
 
 	return bc.Set(ctx, key, item)
-}
-
-func NewBasicCache() BasicCache {
-	return BasicCache{
-		cache: make(map[string]*gocondcache.CacheItem),
-		lock:  &sync.RWMutex{},
-	}
 }

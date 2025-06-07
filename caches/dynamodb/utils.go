@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint:unused
+func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint:unused // not used at the moment
 	_, err := client.CreateTable(ctx, &dynamodb.CreateTableInput{
 		TableName: aws.String("test"),
 		AttributeDefinitions: []types.AttributeDefinition{
@@ -26,8 +26,8 @@ func createTable(ctx context.Context, client *dynamodb.Client) error { //nolint:
 			},
 		},
 		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(5),
-			WriteCapacityUnits: aws.Int64(5),
+			ReadCapacityUnits:  aws.Int64(DefaultReadCapacityUnits),
+			WriteCapacityUnits: aws.Int64(DefaultWriteCapacityUnits),
 		},
 	})
 

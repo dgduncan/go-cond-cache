@@ -7,11 +7,11 @@ import (
 )
 
 var (
-	// DefaultExpiredDuration the default expired duration
+	// DefaultExpiredDuration the default expired duration.
 	DefaultExpiredDuration = 24 * time.Hour
 
-	// DefaultExpiredTaskTimer is the default duration of the expired task timer
-	DefaultExpiredTaskTimer = 10 * time.Minute //nolint
+	// DefaultExpiredTaskTimer is the default duration of the expired task timer.
+	DefaultExpiredTaskTimer = 10 * time.Minute
 )
 
 func Key(req http.Request) string {

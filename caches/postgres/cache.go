@@ -7,17 +7,17 @@ import (
 	_ "embed"
 	"encoding/gob"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // only for side effects, to register the PostgreSQL driver
 
 	gocondcache "github.com/dgduncan/go-cond-cache"
 	"github.com/dgduncan/go-cond-cache/caches"
 )
 
 var (
-	// ErrPingFailed is returned if the initial ping to the database returns an error
+	// ErrPingFailed is returned if the initial ping to the database returns an error.
 	ErrPingFailed = errors.New("ping returned error")
 )
 
@@ -68,25 +68,25 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	defer stmt.Close()
 
 	row := stmt.QueryRowContext(ctx, k, p.now().UTC())
-	if err := row.Err(); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if rowErr := row.Err(); rowErr != nil {
+		if errors.Is(rowErr, sql.ErrNoRows) {
 			return nil, caches.ErrNoCacheItem
 		}
-		return nil, err
+		return nil, rowErr
 	}
 
 	var url string
 	var response []byte
-	if err := row.Scan(&url, &response); err != nil {
-		return nil, err
+	if scanErr := row.Scan(&url, &response); scanErr != nil {
+		return nil, scanErr
 	}
 
 	buff := bytes.NewBuffer(response)
 	dec := gob.NewDecoder(buff)
 
 	var item gocondcache.CacheItem
-	if err := dec.Decode(&item); err != nil {
-		return nil, err
+	if decErr := dec.Decode(&item); decErr != nil {
+		return nil, decErr
 	}
 
 	return &item, nil
@@ -103,8 +103,8 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
-	if err := enc.Encode(v); err != nil {
-		return err
+	if encErr := enc.Encode(v); encErr != nil {
+		return encErr
 	}
 
 	_, err = stmt.ExecContext(ctx, k, buff.Bytes(), p.now().UTC().Add(caches.DefaultExpiredDuration))
@@ -112,16 +112,16 @@ func (p *Cache) Set(ctx context.Context, k string, v *gocondcache.CacheItem) err
 }
 
 // Update modifies the expiration time of an existing cache item in PostgreSQL.
-// This is typically used when a cached response is revalidated with the origin server
-func (bc *Cache) Update(ctx context.Context, key string, expiration time.Time) error {
-	stmt, err := bc.db.PrepareContext(ctx, queryUpdateItem)
+// This is typically used when a cached response is revalidated with the origin server.
+func (p *Cache) Update(ctx context.Context, key string, expiration time.Time) error {
+	stmt, err := p.db.PrepareContext(ctx, queryUpdateItem)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	_, err = stmt.ExecContext(ctx, key, expiration, bc.now().UTC())
-	return err
+	_, execErr := stmt.ExecContext(ctx, key, expiration, p.now().UTC())
+	return execErr
 }
 
 func createTable(ctx context.Context, db *sql.DB) error {
@@ -129,6 +129,7 @@ func createTable(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
@@ -143,24 +144,25 @@ func deleteExpiredItems(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	_, err = stmt.ExecContext(ctx)
 	return err
 }
 
 func expiredTask(ctx context.Context, db *sql.DB) {
-	t := time.NewTimer(5 * time.Second)
+	t := time.NewTimer(caches.DefaultExpiredTaskTimer)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("context is done")
+			slog.DebugContext(ctx, "context is done")
 			return
 		case <-t.C:
 			if err := deleteExpiredItems(ctx, db); err != nil {
-				log.Println(err)
+				slog.ErrorContext(ctx, "error deleting expired items", "error", err)
 			}
-			_ = t.Reset(5 * time.Second)
+			_ = t.Reset(caches.DefaultExpiredTaskTimer)
 		}
 	}
 }
@@ -172,7 +174,7 @@ func expiredTask(ctx context.Context, db *sql.DB) {
 // Returns an error if:
 // - The database connection test fails
 // - Table creation fails
-// - Configuration validation fails
+// - Configuration validation fails.
 func New(ctx context.Context, db *sql.DB, config *Config) (*Cache, error) {
 	if err := db.PingContext(ctx); err != nil {
 		return nil, errors.Join(ErrPingFailed, err)

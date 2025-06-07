@@ -13,6 +13,13 @@ import (
 	"github.com/dgduncan/go-cond-cache/caches"
 )
 
+const (
+	// DefaultReadCapacityUnits is the default read capacity units for the DynamoDB table.
+	DefaultReadCapacityUnits = 5
+	// DefaultWriteCapacityUnits is the default write capacity units for the DynamoDB table.
+	DefaultWriteCapacityUnits = 5
+)
+
 // Config defines the configuration options for the DynamoDB cache implementation.
 type Config struct {
 	DeleteExpiredItems bool // Controls if a the expired_at TTL property is put in the database to allow automatic deletion of expired items
@@ -33,8 +40,8 @@ type Cache struct {
 }
 
 type cacheItem struct {
-	URL       string `json:"url" dynamodbav:"url"`
-	Response  []byte `json:"response" dynamodbav:"response"`
+	URL       string `json:"url"        dynamodbav:"url"`
+	Response  []byte `json:"response"   dynamodbav:"response"`
 	CreatedAt int64  `json:"created_at" dynamodbav:"created_at"`
 	UpdatedAt int64  `json:"updated_at" dynamodbav:"updated_at"`
 	ExpiredAt int64  `json:"expired_at" dynamodbav:"expired_at"`
@@ -42,18 +49,18 @@ type cacheItem struct {
 
 // Get retrieves a cache item from DynamoDB by its key. It returns the cached item
 // if found and not expired, or an appropriate error otherwise.
-func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
+func (c *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, error) {
 	key, err := attributevalue.Marshal(k)
 	if err != nil {
 		return nil, err
 	}
 
-	output, err := p.client.GetItem(ctx, &dynamodb.GetItemInput{
+	output, err := c.client.GetItem(ctx, &dynamodb.GetItemInput{
 		Key: map[string]types.AttributeValue{
 			"url": key,
 		},
 		ConsistentRead: aws.Bool(true),
-		TableName:      aws.String(p.table),
+		TableName:      aws.String(c.table),
 	})
 	if err != nil {
 		return nil, err
@@ -64,16 +71,16 @@ func (p *Cache) Get(ctx context.Context, k string) (*gocondcache.CacheItem, erro
 	}
 
 	var item cacheItem
-	if err := attributevalue.UnmarshalMap(output.Item, &item); err != nil {
-		return nil, err
+	if marshalErr := attributevalue.UnmarshalMap(output.Item, &item); marshalErr != nil {
+		return nil, marshalErr
 	}
 
 	var ci gocondcache.CacheItem
-	if err := gobDecode(item.Response, &ci); err != nil {
-		return nil, err
+	if decErr := gobDecode(item.Response, &ci); decErr != nil {
+		return nil, decErr
 	}
 
-	if p.now().UTC().Unix() >= ci.Expiration.UTC().Unix() {
+	if c.now().UTC().Unix() >= ci.Expiration.UTC().Unix() {
 		return &ci, caches.ErrCacheItemExpired
 	}
 
@@ -144,7 +151,7 @@ func (c *Cache) Update(ctx context.Context, k string, expiration time.Time) erro
 // New creates a new DynamoDB cache instance with the provided configuration.
 // It validates the configuration and sets default values where appropriate.
 // Returns an error if the client is nil or if the configuration is invalid.
-func New(ctx context.Context, client *dynamodb.Client, config *Config) (*Cache, error) {
+func New(client *dynamodb.Client, config *Config) (*Cache, error) {
 	if client == nil {
 		return nil, caches.ValidationError{
 			Reason: "nil client",

@@ -16,7 +16,7 @@ type DomainOverride struct {
 	Duration time.Duration // eg. 1H
 }
 
-// DefaultConfig returns a configuration with sensible defaults
+// DefaultConfig returns a configuration with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
 		DomainOverrides: nil,

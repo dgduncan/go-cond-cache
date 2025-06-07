@@ -24,9 +24,9 @@ const (
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"       //nolint:unused
-	headerIfMofifiedSince   = "If-Modified-Since"   //nolint:unused
-	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint:unused
+	headerLastModified      = "Last-Modified"       //nolint:unused // not implemented but reserved for future use
+	headerIfMofifiedSince   = "If-Modified-Since"   //nolint:unused // not implemented but reserved for future use
+	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint:unused // not implemented but reserved for future use
 )
 
 const (
@@ -54,7 +54,7 @@ type CacheTransport struct {
 // 1. Checks for existing cache entry
 // 2. Returns cached response if valid
 // 3. Attempts revalidation if expired
-// 4. Caches new responses with ETags
+// 4. Caches new responses with ETags.
 func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 
@@ -94,9 +94,14 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		c.logger.DebugContext(ctx, "cache item successfully revalidated", "url", r.URL.String())
 		maxAge := getTimeToCache(resp, c.c.DomainOverrides)
 
-		c.logger.DebugContext(ctx, "updating cache item", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge).Format(time.RFC3339))
-		if err := c.cache.Update(ctx, caches.Key(*resp.Request), c.now().UTC().Add(maxAge)); err != nil {
-			return resp, errors.Join(err, transportError) // return original http response and error
+		c.logger.DebugContext(ctx,
+			"updating cache item", "url",
+			r.URL.String(),
+			"expiration",
+			c.now().UTC().Add(maxAge).Format(time.RFC3339))
+
+		if updateErr := c.cache.Update(ctx, caches.Key(*resp.Request), c.now().UTC().Add(maxAge)); updateErr != nil {
+			c.logger.WarnContext(ctx, "error updating cache with response", "error", updateErr)
 		}
 
 		nr := bufio.NewReader(bytes.NewReader(item.Response))
@@ -113,12 +118,12 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	maxAge := getTimeToCache(resp, c.c.DomainOverrides)
 	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge))
 	resBytes, _ := httputil.DumpResponse(resp, true)
-	if err := c.cache.Set(ctx, caches.Key(*resp.Request), &CacheItem{
+	if cacheErr := c.cache.Set(ctx, caches.Key(*resp.Request), &CacheItem{
 		ETAG:       resp.Header.Get(headerETAG),
 		Response:   resBytes,
 		Expiration: c.now().UTC().Add(maxAge),
-	}); err != nil {
-		c.logger.WarnContext(ctx, "error caching response", "error", err)
+	}); cacheErr != nil {
+		c.logger.WarnContext(ctx, "error caching response", "error", cacheErr)
 	}
 
 	return resp, transportError
@@ -189,7 +194,12 @@ func getCacheControlHeader(r *http.Response) string {
 //   - Handles cache revalidation using If-None-Match headers
 //   - Respects Cache-Control max-age directives for expiration
 //   - Logs cache operations when a logger is provided
-func New(cache Cache, opts *Config, now func() time.Time, logger *slog.Logger) func(http.RoundTripper) http.RoundTripper {
+func New(
+	cache Cache,
+	opts *Config,
+	now func() time.Time,
+	logger *slog.Logger,
+) func(http.RoundTripper) http.RoundTripper {
 	nowFunc := now
 	if nowFunc == nil {
 		nowFunc = time.Now

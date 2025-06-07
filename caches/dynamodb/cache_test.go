@@ -3,7 +3,7 @@
 package dynamodb
 
 import (
-	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -77,9 +77,11 @@ func TestNewDynamoDBCache(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cache, err := New(context.Background(), tt.client, tt.config)
+			t.Parallel()
 
-			if err != tt.expectedErr {
+			cache, err := New(tt.client, tt.config)
+
+			if errors.Is(err, tt.expectedErr) {
 				t.Errorf("expected error %v, got %v", tt.expectedErr, err)
 			}
 
