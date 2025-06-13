@@ -24,9 +24,9 @@ const (
 	headerIfMatch     = "If-Match"
 	headerIfNoneMatch = "If-None-Match"
 
-	headerLastModified      = "Last-Modified"       //nolint:unused // not implemented but reserved for future use
-	headerIfMofifiedSince   = "If-Modified-Since"   //nolint:unused // not implemented but reserved for future use
-	headerIfUnmodifiedSince = "If-Unmodified-Since" //nolint:unused // not implemented but reserved for future use
+	headerLastModified      = "Last-Modified"
+	headerIfModifiedSince   = "If-Modified-Since"
+	headerIfUnmodifiedSince = "If-Unmodified-Since"
 )
 
 const (
@@ -70,11 +70,20 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// cache miss
 	if errors.Is(err, caches.ErrCacheItemExpired) {
 		// item has been found in the cache but is expired
-		// check if item is still valid by adding etag to conditional request
+		// check if item is still valid by adding conditional headers to request
 		c.logger.DebugContext(ctx, "cache item expired, attempting revalidation",
 			"url", r.URL.String(),
 			"expiration", item.Expiration.Format(time.RFC3339))
-		r.Header.Add(headerIfNoneMatch, item.ETAG)
+
+		// Add ETag-based conditional header if available
+		if item.ETAG != "" {
+			r.Header.Add(headerIfNoneMatch, item.ETAG)
+		}
+
+		// Add Last-Modified-based conditional header if available
+		if item.LastModified != nil {
+			r.Header.Add(headerIfModifiedSince, item.LastModified.Format(http.TimeFormat))
+		}
 	} else {
 		c.logger.DebugContext(ctx, "cache item not found", "url", r.URL.String())
 	}
@@ -92,7 +101,7 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if resp.StatusCode == http.StatusNotModified {
 		// cache item as been revalidated as the response is 304
 		c.logger.DebugContext(ctx, "cache item successfully revalidated", "url", r.URL.String())
-		maxAge := getTimeToCache(resp, c.c.DomainOverrides)
+		maxAge := getTimeToCache(resp, c.c.DomainOverrides, c.logger)
 
 		c.logger.DebugContext(ctx,
 			"updating cache item", "url",
@@ -108,20 +117,24 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return http.ReadResponse(nr, nil)
 	}
 
-	// check if response contains conditional request header i.e etag
-	if getETAGHeader(resp) == "" { // if no etag header is found, we don't cache the response
-		c.logger.DebugContext(ctx, "no etag header found, not caching response", "url", r.URL.String())
+	// check if response contains conditional request header i.e etag or last-modified
+	etag := getETAGHeader(resp)
+	lastModified := getLastModifiedHeader(resp)
+
+	if etag == "" && lastModified == nil { // if no conditional headers found, we don't cache the response
+		c.logger.DebugContext(ctx, "no etag or last-modified header found, not caching response", "url", r.URL.String())
 		return resp, transportError
 	}
 
 	// cache the response
-	maxAge := getTimeToCache(resp, c.c.DomainOverrides)
+	maxAge := getTimeToCache(resp, c.c.DomainOverrides, c.logger)
 	c.logger.DebugContext(ctx, "caching response", "url", r.URL.String(), "expiration", c.now().UTC().Add(maxAge))
 	resBytes, _ := httputil.DumpResponse(resp, true)
 	if cacheErr := c.cache.Set(ctx, caches.Key(*resp.Request), &CacheItem{
-		ETAG:       resp.Header.Get(headerETAG),
-		Response:   resBytes,
-		Expiration: c.now().UTC().Add(maxAge),
+		ETAG:         etag,
+		LastModified: lastModified,
+		Response:     resBytes,
+		Expiration:   c.now().UTC().Add(maxAge),
 	}); cacheErr != nil {
 		c.logger.WarnContext(ctx, "error caching response", "error", cacheErr)
 	}
@@ -129,11 +142,11 @@ func (c *CacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, transportError
 }
 
-func getTimeToCache(r *http.Response, c []DomainOverride) time.Duration {
+func getTimeToCache(r *http.Response, c []DomainOverride, logger *slog.Logger) time.Duration {
 	// check to see if any domain overrides exist
 	for _, v := range c {
 		if strings.HasPrefix(r.Request.URL.Host+r.Request.URL.Path, v.URI) {
-			slog.DebugContext(context.Background(), "caching override found")
+			logger.DebugContext(context.Background(), "caching override found")
 			return v.Duration
 		}
 	}
@@ -176,6 +189,18 @@ func getMaxAge(r *http.Response) time.Duration {
 
 func getETAGHeader(r *http.Response) string {
 	return r.Header.Get(headerETAG)
+}
+
+func getLastModifiedHeader(r *http.Response) *time.Time {
+	lastModified := r.Header.Get(headerLastModified)
+	if lastModified == "" {
+		return nil
+	}
+	parsedTime, err := time.Parse(http.TimeFormat, lastModified)
+	if err != nil {
+		return nil
+	}
+	return &parsedTime
 }
 
 func getCacheControlHeader(r *http.Response) string {

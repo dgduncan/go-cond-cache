@@ -9,9 +9,10 @@ import (
 // It contains the ETag for conditional request validation, the response body,
 // and an expiration time for cache invalidation.
 type CacheItem struct {
-	ETAG       string
-	Response   []byte
-	Expiration time.Time
+	ETAG         string
+	LastModified *time.Time
+	Response     []byte
+	Expiration   time.Time
 }
 
 // Cache defines the interface for cache operations across different storage implementations.

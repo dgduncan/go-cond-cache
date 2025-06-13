@@ -12,13 +12,27 @@ import (
 
 type BasicCache struct {
 	cache map[string]*gocondcache.CacheItem
-
-	lock *sync.RWMutex
+	now   func() time.Time
+	lock  *sync.RWMutex
 }
 
 func NewBasicCache() BasicCache {
 	return BasicCache{
 		cache: make(map[string]*gocondcache.CacheItem),
+		now:   time.Now,
+		lock:  &sync.RWMutex{},
+	}
+}
+
+func NewBasicCacheWithTimeFunc(now func() time.Time) BasicCache {
+	nowFunc := now
+	if nowFunc == nil {
+		nowFunc = time.Now
+	}
+
+	return BasicCache{
+		cache: make(map[string]*gocondcache.CacheItem),
+		now:   nowFunc,
 		lock:  &sync.RWMutex{},
 	}
 }
@@ -32,7 +46,7 @@ func (bc *BasicCache) Get(_ context.Context, key string) (*gocondcache.CacheItem
 		return nil, caches.ErrNoCacheItem
 	}
 
-	if time.Now().UTC().After(val.Expiration) {
+	if bc.now().UTC().After(val.Expiration) {
 		return val, caches.ErrCacheItemExpired
 	}
 
